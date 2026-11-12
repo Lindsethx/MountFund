@@ -1,7 +1,7 @@
 ## Interface: 16001
 ## Title: MountFund
 ## Notes: Guilden spleiser 1g hver til påmeldte som er 40+ og mangler riding
-## Version: 1.3
+## Version: 1.4
 ## SavedVariables: MountFundDB
 ## SavedVariablesPerCharacter: MountFundChar
 

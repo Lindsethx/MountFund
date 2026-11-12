@@ -31,7 +31,9 @@ local function FullName(name)
     return name
 end
 
-local function Me() return FullName(UnitName("player")) end
+-- På Forever heter karakterer «Fornavn Etternavn», men UnitName("player") gir bare fornavnet.
+-- Det fulle navnet hentes derfor fra guild-lista (via GUID) og lagres i char.myName.
+local function Me() return (char and char.myName) or FullName(UnitName("player")) end
 local function Short(name) return Ambiguate(name, "short") end
 
 local function Count(t)
@@ -226,15 +228,39 @@ local function CreateButton()
     button:Hide()
 end
 
+-- ---------- Eget navn og oppstart av meldinger ----------
+local commsStarted = false
+
+-- Sier fra til guilden at vi er her. Venter til vi vet vårt eget fulle navn,
+-- så vi kjenner igjen våre egne meldinger når serveren sender dem tilbake.
+local function StartComms()
+    if commsStarted then return end
+    commsStarted = true
+    CheckRiding()
+    if char.optedIn then Send("JOIN") end
+    Announce()
+    Send("PING")
+end
+
+local function SetMyName(name)
+    char.myName = name
+    acc.myChars[name] = true
+    acc.pending[name] = nil
+    participants[name] = nil
+    StartComms()
+end
+
 -- ---------- Guild-roster: bekrefter level ----------
 local function ScanRoster()
     if not IsInGuild() then return end
     local n = GetNumGuildMembers()
     if not n or n == 0 then return end   -- lista er ikke lastet ennå
+    local myGUID = UnitGUID("player")
     for i = 1, n do
-        local name, _, _, level = GetGuildRosterInfo(i)
+        local name, _, _, level, _, _, _, _, _, _, _, _, _, _, _, _, guid = GetGuildRosterInfo(i)
         if name and level and level > 0 then
             name = FullName(name)
+            if guid and guid == myGUID and name ~= char.myName then SetMyName(name) end
             char.roster[name] = level
             if verify[name] and CanReceive(name) then
                 verify[name] = nil
@@ -294,11 +320,11 @@ f:SetScript("OnEvent", function(_, event, ...)
         C_Timer.NewTicker(ROSTER_INTERVAL, RequestRoster)
         C_Timer.After(5, function()
             RequestRoster()
-            CheckRiding()
-            if char.optedIn then Send("JOIN") end
-            Announce()
-            Send("PING")
+            -- Kjenner vi navnet fra før, kan vi starte med en gang. Ellers venter vi på
+            -- guild-lista (SetMyName), med en reserve i tilfelle den ikke kommer.
+            if char.myName then StartComms() end
         end)
+        C_Timer.After(30, StartComms)
         if char.inflight then
             Print(("Du logget ut mens 1g til %s var underveis. Det regnes som sendt. "
                 .. "Sjekk at gullet er trukket; ellers /mf add %s.")
@@ -422,7 +448,9 @@ SlashCmdList.MOUNTFUND = function(input)
     elseif cmd == "who" then
         local list = {}
         if char.optedIn then table.insert(list, Short(Me())) end
-        for name in pairs(participants) do table.insert(list, Short(name)) end
+        for name in pairs(participants) do
+            if name ~= Me() then table.insert(list, Short(name)) end
+        end
         table.sort(list)
         Print(("%d påmeldt (online med addon): %s"):format(#list, table.concat(list, ", ")))
     elseif cmd == "queue" then
